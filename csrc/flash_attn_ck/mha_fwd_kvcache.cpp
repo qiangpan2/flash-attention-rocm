@@ -482,34 +482,22 @@ mha_fwd_kvcache(at::Tensor &q,                                      // batch_siz
     auto stream = at::cuda::getCurrentCUDAStream().stream();
     ck_tile::stream_config stream_config{stream};
 
-    if (seqlen_knew > 0 || rotary_dim > 0) {
-        auto appendkv_traits =
-            get_ck_fmha_fwd_appendkv_traits(q_dtype_str, head_size_8x, rotary_dim, is_rotary_interleaved);
+    // NOTE (ck_tile v3): This entrypoint currently depends on CK "splitkv"/"appendkv" kernels
+    // that are not compiled/linked into the v3-only extension build, which would otherwise
+    // cause import-time undefined symbol errors. Keep the API surface but fail loudly if called.
+    TORCH_CHECK(false,
+                "ck_tile v3 build does not support fwd_kvcache yet (requires splitkv/appendkv kernels). "
+                "Use a backend that supports KV cache (e.g. Triton AMD) or build a CK configuration that "
+                "includes the required kernels.");
 
-        auto appendkv_args =
-            get_ck_fmha_fwd_appendkv_args(
-                batch_size,
-                seqlen_q,
-                seqlen_knew,
-                num_heads,
-                num_heads_k,
-                head_size_8x,
-                rotary_dim,
-                mask.type != mask_enum::no_mask,
-                page_block_size,
-                q_padded,
-                kcache_padded,
-                vcache_padded,
-                k_padded,
-                v_padded,
-                seqlens_k_,
-                rotary_cos_,
-                rotary_sin_,
-                cache_batch_idx_,
-                block_table_);
-
-        fmha_fwd_appendkv(appendkv_traits, appendkv_args, stream_config);
-    }
+    // NOTE (ck_tile v3): appendkv kernel instantiation is not currently included in this build.
+    // If we reference fmha_fwd_appendkv here, the extension will fail to load at import time with
+    // an undefined symbol error. We keep the API entrypoint but error out if append is requested.
+    TORCH_CHECK(
+        seqlen_knew == 0 && rotary_dim == 0,
+        "ck_tile v3 build does not support KV-cache append (knew/vnew) or rotary in fwd_kvcache yet. "
+        "Build with a backend that supports it (e.g. Triton AMD) or call with seqlen_knew=0 and rotary_dim=0."
+    );
 
     // seqlens_k_ is the seqlen of kvcache. We need to add seqlen_knew for before attention
     auto append_seqlens_k = torch::empty({batch_size}, opts.dtype(torch::kInt32));

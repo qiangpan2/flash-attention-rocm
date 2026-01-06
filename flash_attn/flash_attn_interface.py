@@ -498,35 +498,13 @@ class FlashAttnQKVPackedFunc(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, dout, *args):
-        q, k, v, out, softmax_lse, rng_state = ctx.saved_tensors
-        qkv_shape = q.shape[:-2] + (3, *q.shape[-2:])
-        dqkv = torch.empty(qkv_shape, dtype=q.dtype, device=q.device)
-        head_size_og = dout.size(3)
-        dout_padded = dout
-        if head_size_og % 8 != 0:
-            dout_padded = torch.nn.functional.pad(dout, [0, 8 - head_size_og % 8])
-        _wrapped_flash_attn_backward(
-            dout_padded,
-            q,
-            k,
-            v,
-            out,
-            softmax_lse,
-            dqkv[:, :, 0],
-            dqkv[:, :, 1],
-            dqkv[:, :, 2],
-            ctx.dropout_p,
-            ctx.softmax_scale,
-            ctx.causal,
-            ctx.window_size[0],
-            ctx.window_size[1],
-            ctx.softcap,
-            ctx.alibi_slopes,
-            ctx.deterministic,
-            rng_state=rng_state,
+        # V3 implementation does not support backward pass
+        raise NotImplementedError(
+            "Backward pass is not implemented in the current ck_tile v3 build. "
+            "This build only supports forward inference. "
+            "If you need gradient computation, please use a different backend or "
+            "set FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE to use the Triton backend."
         )
-        dqkv = dqkv[..., : dout.shape[-1]]  # We could have padded the head dimension
-        return dqkv, None, None, None, None, None, None, None, None, None
 
 
 class FlashAttnVarlenQKVPackedFunc(torch.autograd.Function):
@@ -588,39 +566,13 @@ class FlashAttnVarlenQKVPackedFunc(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, dout, *args):
-        q, k, v, out, softmax_lse, cu_seqlens, rng_state = ctx.saved_tensors
-        qkv_shape = q.shape[:-2] + (3, *q.shape[-2:])
-        dqkv = torch.empty(qkv_shape, dtype=q.dtype, device=q.device)
-        head_size_og = dout.size(2)
-        dout_padded = dout
-        if head_size_og % 8 != 0:
-            dout_padded = torch.nn.functional.pad(dout, [0, 8 - head_size_og % 8])
-        _wrapped_flash_attn_varlen_backward(
-            dout_padded,
-            q,
-            k,
-            v,
-            out,
-            softmax_lse,
-            dqkv[:, 0],
-            dqkv[:, 1],
-            dqkv[:, 2],
-            cu_seqlens,
-            cu_seqlens,
-            ctx.max_seqlen,
-            ctx.max_seqlen,
-            ctx.dropout_p,
-            ctx.softmax_scale,
-            ctx.causal,
-            ctx.window_size[0],
-            ctx.window_size[1],
-            ctx.softcap,
-            ctx.alibi_slopes,
-            ctx.deterministic,
-            rng_state=rng_state,
+        # V3 implementation does not support backward pass
+        raise NotImplementedError(
+            "Backward pass is not implemented in the current ck_tile v3 build. "
+            "This build only supports forward inference. "
+            "If you need gradient computation, please use a different backend or "
+            "set FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE to use the Triton backend."
         )
-        dqkv = dqkv[..., : dout.shape[-1]]  # We could have padded the head dimension
-        return dqkv, None, None, None, None, None, None, None, None, None, None, None
 
 
 class FlashAttnKVPackedFunc(torch.autograd.Function):
@@ -677,37 +629,13 @@ class FlashAttnKVPackedFunc(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, dout, *args):
-        q, k, v, out, softmax_lse, rng_state = ctx.saved_tensors
-        dq = torch.empty_like(q)
-        kv_shape = k.shape[:-2] + (2, *k.shape[-2:])
-        dkv = torch.empty(kv_shape, dtype=k.dtype, device=k.device)
-        head_size_og = dout.size(3)
-        dout_padded = dout
-        if head_size_og % 8 != 0:
-            dout_padded = torch.nn.functional.pad(dout, [0, 8 - head_size_og % 8])
-        _wrapped_flash_attn_backward(
-            dout_padded,
-            q,
-            k,
-            v,
-            out,
-            softmax_lse,
-            dq,
-            dkv[:, :, 0],
-            dkv[:, :, 1],
-            ctx.dropout_p,
-            ctx.softmax_scale,
-            ctx.causal,
-            ctx.window_size[0],
-            ctx.window_size[1],
-            ctx.softcap,
-            ctx.alibi_slopes,
-            ctx.deterministic,
-            rng_state=rng_state,
+        # V3 implementation does not support backward pass
+        raise NotImplementedError(
+            "Backward pass is not implemented in the current ck_tile v3 build. "
+            "This build only supports forward inference. "
+            "If you need gradient computation, please use a different backend or "
+            "set FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE to use the Triton backend."
         )
-        dq = dq[..., : dout.shape[-1]]  # We could have padded the head dimension
-        dkv = dkv[..., : dout.shape[-1]]
-        return dq, dkv, None, None, None, None, None, None, None, None, None
 
 
 class FlashAttnVarlenKVPackedFunc(torch.autograd.Function):
@@ -777,41 +705,13 @@ class FlashAttnVarlenKVPackedFunc(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, dout, *args):
-        q, k, v, out, softmax_lse, cu_seqlens_q, cu_seqlens_k, rng_state = ctx.saved_tensors
-        dq = torch.empty_like(q)
-        kv_shape = k.shape[:-2] + (2, *k.shape[-2:])
-        dkv = torch.empty(kv_shape, dtype=k.dtype, device=k.device)
-        head_size_og = dout.size(2)
-        dout_padded = dout
-        if head_size_og % 8 != 0:
-            dout_padded = torch.nn.functional.pad(dout, [0, 8 - head_size_og % 8])
-        _wrapped_flash_attn_varlen_backward(
-            dout_padded,
-            q,
-            k,
-            v,
-            out,
-            softmax_lse,
-            dq,
-            dkv[:, 0],
-            dkv[:, 1],
-            cu_seqlens_q,
-            cu_seqlens_k,
-            ctx.max_seqlen_q,
-            ctx.max_seqlen_k,
-            ctx.dropout_p,
-            ctx.softmax_scale,
-            ctx.causal,
-            ctx.window_size[0],
-            ctx.window_size[1],
-            ctx.softcap,
-            ctx.alibi_slopes,
-            ctx.deterministic,
-            rng_state=rng_state,
+        # V3 implementation does not support backward pass
+        raise NotImplementedError(
+            "Backward pass is not implemented in the current ck_tile v3 build. "
+            "This build only supports forward inference. "
+            "If you need gradient computation, please use a different backend or "
+            "set FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE to use the Triton backend."
         )
-        dq = dq[..., : dout.shape[-1]]  # We could have padded the head dimension
-        dkv = dkv[..., : dout.shape[-1]]
-        return dq, dkv, None, None, None, None, None, None, None, None, None, None, None, None, None
 
 
 class FlashAttnFunc(torch.autograd.Function):
@@ -831,6 +731,8 @@ class FlashAttnFunc(torch.autograd.Function):
         return_softmax,
         is_grad_enabled,
     ):
+        # V3 note: gradient support is not available in ck_tile v3
+        # We only save tensors if gradients will be needed to provide a better error message
         is_grad = is_grad_enabled and any(
             x.requires_grad for x in [q, k, v]
         )
@@ -855,6 +757,7 @@ class FlashAttnFunc(torch.autograd.Function):
             return_softmax=return_softmax and dropout_p > 0,
         )
         if is_grad:
+            # Save context for backward error message
             ctx.save_for_backward(q, k, v, out_padded, softmax_lse, rng_state)
             ctx.dropout_p = dropout_p
             ctx.softmax_scale = softmax_scale
@@ -868,36 +771,13 @@ class FlashAttnFunc(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, dout, *args):
-        q, k, v, out, softmax_lse, rng_state = ctx.saved_tensors
-        dq, dk, dv = torch.empty_like(q), torch.empty_like(k), torch.empty_like(v)
-        head_size_og = dout.size(3)
-        dout_padded = dout
-        if head_size_og % 8 != 0:
-            dout_padded = torch.nn.functional.pad(dout, [0, 8 - head_size_og % 8])
-        _wrapped_flash_attn_backward(
-            dout_padded,
-            q,
-            k,
-            v,
-            out,
-            softmax_lse,
-            dq,
-            dk,
-            dv,
-            ctx.dropout_p,
-            ctx.softmax_scale,
-            ctx.causal,
-            ctx.window_size[0],
-            ctx.window_size[1],
-            ctx.softcap,
-            ctx.alibi_slopes,
-            ctx.deterministic,
-            rng_state=rng_state,
+        # V3 implementation does not support backward pass
+        raise NotImplementedError(
+            "Backward pass is not implemented in the current ck_tile v3 build. "
+            "This build only supports forward inference. "
+            "If you need gradient computation, please use a different backend or "
+            "set FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE to use the Triton backend."
         )
-        dq = dq[..., : dout.shape[-1]]  # We could have padded the head dimension
-        dk = dk[..., : dout.shape[-1]]
-        dv = dv[..., : dout.shape[-1]]
-        return dq, dk, dv, None, None, None, None, None, None, None, None, None
 
 
 class FlashAttnVarlenFunc(torch.autograd.Function):
@@ -969,40 +849,13 @@ class FlashAttnVarlenFunc(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, dout, *args):
-        q, k, v, out, softmax_lse, cu_seqlens_q, cu_seqlens_k, rng_state = ctx.saved_tensors
-        dq, dk, dv = torch.empty_like(q), torch.empty_like(k), torch.empty_like(v)
-        head_size_og = dout.size(2)
-        dout_padded = dout
-        if head_size_og % 8 != 0:
-            dout_padded = torch.nn.functional.pad(dout, [0, 8 - head_size_og % 8])
-        _wrapped_flash_attn_varlen_backward(
-            dout_padded,
-            q,
-            k,
-            v,
-            out,
-            softmax_lse,
-            dq,
-            dk,
-            dv,
-            cu_seqlens_q,
-            cu_seqlens_k,
-            ctx.max_seqlen_q,
-            ctx.max_seqlen_k,
-            ctx.dropout_p,
-            ctx.softmax_scale,
-            ctx.causal,
-            ctx.window_size[0],
-            ctx.window_size[1],
-            ctx.softcap,
-            ctx.alibi_slopes,
-            ctx.deterministic,
-            rng_state=rng_state,
+        # V3 implementation does not support backward pass
+        raise NotImplementedError(
+            "Backward pass is not implemented in the current ck_tile v3 build. "
+            "This build only supports forward inference. "
+            "If you need gradient computation, please use a different backend or "
+            "set FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE to use the Triton backend."
         )
-        dq = dq[..., : dout.shape[-1]]  # We could have padded the head dimension
-        dk = dk[..., : dout.shape[-1]]
-        dv = dv[..., : dout.shape[-1]]
-        return dq, dk, dv, None, None, None, None, None, None, None, None, None, None, None, None, None, None
 
 
 def flash_attn_qkvpacked_func(

@@ -1,0 +1,10 @@
+torch @ file:///var/lib/jenkins/pytorch/dist/torch-2.7.1%2Bgit99ccf24-cp312-cp312-linux_x86_64.whl
+amdsmi @ file:///opt/rocm-6.4.4/share/amd_smi
+flash_attn @ file:///root/flash_attn-2.8.3-cp312-cp312-linux_x86_64.whl
+numpy>=1.26.4
+packaging>=23.2
+setuptools>=68
+wheel>=0.41
+ninja>=1.11
+psutil>=5.9
+

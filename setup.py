@@ -185,7 +185,7 @@ def rename_cpp_to_cu(cpp_files):
 
 def validate_and_update_archs(archs):
     # List of allowed architectures
-    allowed_archs = ["native", "gfx90a", "gfx950", "gfx942"]
+    allowed_archs = ["native", "gfx1100", "gfx1201"]
 
     # Validate if each element in archs is in allowed_archs
     assert all(
@@ -365,15 +365,14 @@ elif not SKIP_CUDA_BUILD and IS_ROCM:
     if not SKIP_CK_BUILD:
         ck_dir = "csrc/composable_kernel"
 
-        #use codegen get code dispatch
+        # V3 implementation: No code generation needed, uses pre-built kernel templates
+        # Create build directory for any potential outputs
         if not os.path.exists("./build"):
             os.makedirs("build")
 
-        optdim = os.getenv("OPT_DIM", "32,64,128,256")
-        subprocess.run([sys.executable, f"{ck_dir}/example/ck_tile/01_fmha/generate.py", "-d", "fwd", "--output_dir", "build", "--receipt", "2", "--optdim", optdim], check=True)
-        subprocess.run([sys.executable, f"{ck_dir}/example/ck_tile/01_fmha/generate.py", "-d", "fwd_appendkv", "--output_dir", "build", "--receipt", "2", "--optdim", optdim], check=True)
-        subprocess.run([sys.executable, f"{ck_dir}/example/ck_tile/01_fmha/generate.py", "-d", "fwd_splitkv", "--output_dir", "build", "--receipt", "2", "--optdim", optdim], check=True)
-        subprocess.run([sys.executable, f"{ck_dir}/example/ck_tile/01_fmha/generate.py", "-d", "bwd", "--output_dir", "build", "--receipt", "2", "--optdim", optdim], check=True)
+        # Note: For v3, we don't use generate.py. The kernels are template-based
+        # and instantiated directly in our source files.
+        print("Using ck_tile v3 API (forward only, no codegen)")
 
         # Check, if ATen/CUDAGeneratorImpl.h is found, otherwise use ATen/cuda/CUDAGeneratorImpl.h
         # See https://github.com/pytorch/pytorch/pull/70650
@@ -383,14 +382,18 @@ elif not SKIP_CUDA_BUILD and IS_ROCM:
             generator_flag = ["-DOLD_GENERATOR_PATH"]
 
         check_if_rocm_home_none("flash_attn")
-        archs = os.getenv("GPU_ARCHS", "native").split(";")
-        validate_and_update_archs(archs)
-
-        if archs != ['native']:
-            cc_flag = [f"--offload-arch={arch}" for arch in archs]
-        else:
+        
+        # V3: Focus on gfx1100 and gfx1201 (RDNA3 architecture)
+        archs_env = os.getenv("GPU_ARCHS", "gfx1100;gfx1201")
+        if archs_env == "native":
+            # Detect current GPU
             arch = torch.cuda.get_device_properties("cuda").gcnArchName.split(":")[0]
-            cc_flag = [f"--offload-arch={arch}"]
+            archs = [arch]
+        else:
+            archs = archs_env.split(";")
+        
+        print(f"Building for GPU architectures: {archs}")
+        cc_flag = [f"--offload-arch={arch}" for arch in archs]
 
         # HACK: The compiler flag -D_GLIBCXX_USE_CXX11_ABI is set to be the same as
         # torch._C._GLIBCXX_USE_CXX11_ABI
@@ -398,29 +401,37 @@ elif not SKIP_CUDA_BUILD and IS_ROCM:
         if FORCE_CXX11_ABI:
             torch._C._GLIBCXX_USE_CXX11_ABI = True
 
-        sources = ["csrc/flash_attn_ck/flash_api.cpp",
-                "csrc/flash_attn_ck/flash_common.cpp",
-                "csrc/flash_attn_ck/mha_bwd.cpp",
-                "csrc/flash_attn_ck/mha_fwd_kvcache.cpp",
-                "csrc/flash_attn_ck/mha_fwd.cpp",
-                "csrc/flash_attn_ck/mha_varlen_bwd.cpp",
-                "csrc/flash_attn_ck/mha_varlen_fwd.cpp"] + glob.glob(
-            f"build/fmha_*wd*.cpp"
-        )
+        # V3 sources: Only forward pass implementations
+        sources = [
+            "csrc/flash_attn_ck/flash_api.cpp",
+            "csrc/flash_attn_ck/flash_common.cpp",
+            "csrc/flash_attn_ck/mha_fwd_v3.cpp",
+            "csrc/flash_attn_ck/mha_varlen_fwd_v3.cpp",
+            "csrc/flash_attn_ck/mha_fwd_kvcache.cpp",
+            "csrc/flash_attn_ck/mha_bwd_stub.cpp",  # Stub for backward (duck-typed interface)
+            # V3 kernel implementation and instantiation files
+            f"{ck_dir}/example/ck_tile/01_fmha/fmha_fwd_v3.cpp",
+            "csrc/flash_attn_ck/fmha_fwd_v3_instances.cpp",
+        ]
 
         rename_cpp_to_cu(sources)
 
-        renamed_sources = ["csrc/flash_attn_ck/flash_api.cu",
-                        "csrc/flash_attn_ck/flash_common.cu",
-                        "csrc/flash_attn_ck/mha_bwd.cu",
-                        "csrc/flash_attn_ck/mha_fwd_kvcache.cu",
-                        "csrc/flash_attn_ck/mha_fwd.cu",
-                        "csrc/flash_attn_ck/mha_varlen_bwd.cu",
-                        "csrc/flash_attn_ck/mha_varlen_fwd.cu"] + glob.glob(f"build/fmha_*wd*.cu")
+        renamed_sources = [
+            "csrc/flash_attn_ck/flash_api.cu",
+            "csrc/flash_attn_ck/flash_common.cu",
+            "csrc/flash_attn_ck/mha_fwd_v3.cu",
+            "csrc/flash_attn_ck/mha_varlen_fwd_v3.cu",
+            "csrc/flash_attn_ck/mha_fwd_kvcache.cu",
+            "csrc/flash_attn_ck/mha_bwd_stub.cu",
+            f"{ck_dir}/example/ck_tile/01_fmha/fmha_fwd_v3.cu",
+            "csrc/flash_attn_ck/fmha_fwd_v3_instances.cu",
+        ]
 
         cc_flag += ["-O3","-std=c++17",
                     "-DCK_TILE_FMHA_FWD_FAST_EXP2=1",
                     "-fgpu-flush-denormals-to-zero",
+                    "-fconstexpr-depth=4096",  # Increase constexpr recursion limit for BF16
+                    "-fconstexpr-steps=10000000",  # Increase constexpr evaluation steps for BF16
                     "-DCK_ENABLE_BF16",
                     "-DCK_ENABLE_BF8",
                     "-DCK_ENABLE_FP16",
@@ -431,7 +442,8 @@ elif not SKIP_CUDA_BUILD and IS_ROCM:
                     "-DCK_USE_XDL",
                     "-DUSE_PROF_API=1",
                     # "-DFLASHATTENTION_DISABLE_BACKWARD",
-                    "-D__HIP_PLATFORM_HCC__=1"]
+                    "-D__HIP_PLATFORM_HCC__=1",
+                    "-Wno-unused-result"]  # Suppress warnings
 
         cc_flag += [f"-DCK_TILE_FLOAT_TO_BFLOAT16_DEFAULT={os.environ.get('CK_TILE_FLOAT_TO_BFLOAT16_DEFAULT', 3)}"]
 
@@ -458,6 +470,7 @@ elif not SKIP_CUDA_BUILD and IS_ROCM:
             Path(this_dir) / "csrc" / "composable_kernel" / "include",
             Path(this_dir) / "csrc" / "composable_kernel" / "library" / "include",
             Path(this_dir) / "csrc" / "composable_kernel" / "example" / "ck_tile" / "01_fmha",
+            Path(this_dir) / "csrc" / "flash_attn_ck",  # Add flash_attn_ck to include path for wmma files
         ]
 
         ext_modules.append(
